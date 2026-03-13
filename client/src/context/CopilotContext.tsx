@@ -1,7 +1,6 @@
 import { ICopilotContext } from "@/types/copilot"
 import { createContext, ReactNode, useContext, useState } from "react"
 import toast from "react-hot-toast"
-import axiosInstance from "../api/pollinationsApi"
 
 const CopilotContext = createContext<ICopilotContext | null>(null)
 
@@ -30,28 +29,43 @@ const CopilotContextProvider = ({ children }: { children: ReactNode }) => {
 
             toast.loading("Generating code...")
             setIsRunning(true)
-            const response = await axiosInstance.post("/", {
-                messages: [
-                    {
-                        role: "system",
-                        content:
-                            "You are a code generator copilot for project named Code Sync. Generate code based on the given prompt without any explanation. Return only the code, formatted in Markdown using the appropriate language syntax (e.g., js for JavaScript, py for Python). Do not include any additional text or explanations. If you don't know the answer, respond with 'I don't know'.",
-                    },
-                    {
-                        role: "user",
-                        content: input,
-                    },
-                ],
-                model: "mistral",
-                private: true,
+
+            const response = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    model: "claude-sonnet-4-20250514",
+                    max_tokens: 1000,
+                    system: "You are a code generator copilot for a project named Code Sync. Generate code based on the given prompt without any explanation. Return only the code, formatted in Markdown using the appropriate language syntax (e.g., js for JavaScript, py for Python). Do not include any additional text or explanations. If you don't know the answer, respond with 'I don't know'.",
+                    messages: [
+                        {
+                            role: "user",
+                            content: input,
+                        },
+                    ],
+                }),
             })
-            if (response.data) {
-                toast.success("Code generated successfully")
-                const code = response.data
-                if (code) setOutput(code)
+
+            const data = await response.json()
+
+            if (!response.ok) {
+                throw new Error(data?.error?.message || "API request failed")
             }
+
+            const code = data.content
+                ?.filter((block: { type: string }) => block.type === "text")
+                .map((block: { text: string }) => block.text)
+                .join("")
+
+            if (code) {
+                setOutput(code)
+                toast.dismiss()
+                toast.success("Code generated successfully")
+            }
+
             setIsRunning(false)
-            toast.dismiss()
         } catch (error) {
             console.error(error)
             setIsRunning(false)
